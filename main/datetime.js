@@ -68,8 +68,8 @@
 
 		function formatter(pattern) {
 
-			function isPatternChar(char) {
-				return patternChars.indexOf(char) !== -1;
+			function isPatternChar(ch) {
+				return patternChars.indexOf(ch) !== -1;
 			}
 
 			function compile() {
