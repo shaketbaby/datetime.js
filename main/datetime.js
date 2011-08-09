@@ -1,143 +1,131 @@
 (function(context) {
 
-	context.DateTime = (function() {
-		var patternChars = "y";
+	var SUNDAY = 0, MONDAY = 1, TUESDAY = 2, WEDNSDAY = 3, THURSDAY = 4, FRIDAY = 5, SATURDAY = 6;
 
-		var SUNDAY = 0, MONDAY = 1, TUESDAY = 2, WEDNSDAY = 3, THURSDAY = 4, FRIDAY = 5, SATURDAY = 6;
+	var dateTime = function(){};
 
-		var entryMaanger = (function(){
-			function createEntryClass(formatFunction, populateFunction, patternHandlableFunction) {
-				function Entry(pattern, startIndex) {
-					this.pattern = pattern;
-					this.startIndex = startIndex;
-				}
-				Entry.prototype.format = formatFunction;
-				Entry.prototype.populate = populateFunction;
-				Entry.isPatternHandlable = patternHandlableFunction;
-				return Entry;
-			}
+	dateTime.SUNDAY   = SUNDAY;
+	dateTime.MONDAY   = MONDAY;
+	dateTime.TUESDAY  = TUESDAY;
+	dateTime.WEDNSDAY = WEDNSDAY;
+	dateTime.THURSDAY = THURSDAY;
+	dateTime.FRIDAY   = FRIDAY;
+	dateTime.SATURDAY = SATURDAY;
 
-			function plainTextEntryClass() {
-				function format() {
-					return this.pattern;
-				}
-				function populate() {
-					// plain text in the pattern, ignored during parse
-				}
-				return createEntryClass(format, populate, null);
-			}
+	function trim(string) {
+		return string.replace(/^\s|\s$/g, "");
+	}
 
-			function yearPatternEntryClass() {
-				function format(date) {
-					return date.getFullYear().toString();
-				}
-				function populate(dateString, targetDate) {
-					targetDate.setFullYear(dateString.substr(this.startIndex, this.pattern.length));
-				}
-				function isPatternHandlable(pattern) {
-					return pattern === "yyyy";
-				}
-				return createEntryClass(format, populate, isPatternHandlable);
-			}
+	function isPatternChar(ch) {
+		return "y".indexOf(ch) > -1;
+	}
 
-			function createEntryManager(PlainTextEntry, patternEntries) {
-				return {
-					newPlainTextEntry: function(pattern, startIndex) {
-						return new PlainTextEntry(pattern, startIndex);
-					},
-					newPatternEntry: function(pattern, startIndex) {
-						function findPatternEntry() {
-							for (var i = 0; i < patternEntries.length; i++) {
-								if (patternEntries[i].isPatternHandlable(pattern)) {
-									return patternEntries[i];
-								}
-							}
-							throw new Error("unknown pattern[" + pattern + "], start from'" + startIndex + "'");
-						}
+	function formatForYearPattern(date) {
+		return date.getFullYear().toString();
+	}
 
-						var Entry = findPatternEntry(pattern);
-						return new Entry(pattern, startIndex);
-					}
-				};
-			}
+	function populateForYearPattern(dateString, targetDate) {
+		targetDate.setFullYear(dateString.substr(this.startIndex, this.text.length));
+	}
 
-			return createEntryManager(plainTextEntryClass(), [
-				yearPatternEntryClass()
-			]);
-		}());
-
-		function formatter(pattern) {
-
-			function isPatternChar(ch) {
-				return patternChars.indexOf(ch) !== -1;
-			}
-
-			function compile() {
-				var i;
-				var inPattern = false;
-				var tempPattern = "";
-				var previousChar = currentChar = '\0';
-
-				for (i = 0; i < pattern.length; ) {
-					previousChar = currentChar;
-					currentChar = pattern.charAt(i);
-					if (isPatternChar(currentChar)) {
-						if (inPattern) {
-							if (currentChar === previousChar) {
-								tempPattern += currentChar;
-							} else {
-
-							}
-						} else {
-							inPattern = true;
-						}
-					} else {
-
-					}
-				}
-			}
-
-			function Formatter() {
-				this.entries = compile();
-			}
-			Formatter.prototype.format = function(date) {
-				return "";
+	function createPatternEntry(patternText, startIndex) {
+		if ("yyyy" === patternText) {
+			return {
+				text: patternText,
+				startIndex: startIndex,
+				format: formatForYearPattern,
+				populate: populateForYearPattern
 			};
-			Formatter.prototype.parse = function(dateString) {
-				if (!dateString || (dateString.length != pattern.length)) {
-					throw new Error("invalid date string: " + dateString);
-				}
-				return new Date();
-			};
-			return Formatter;
 		}
+		throw new Error("unkonw pattern - '" + patternText + "'");
+	}
 
-		function newFormatter(pattern) {
-			var Formatter = formatter(pattern);
-			return new Formatter();
-		}
+	function newPatternEntry(fullPattern, startIndex) {
+		var text = fullPattern.charAt(startIndex),
+			currentChar,
+			previousChar = fullPattern.charAt(startIndex);
 
-		function formatApi(date, pattern) {
-			if (date && pattern) {
-				return newFormatter(pattern).format(date);
+		for (var i = startIndex + 1; i < fullPattern.length; i++) {
+			currentChar = fullPattern.charAt(i);
+			if (currentChar === previousChar) {
+				text += fullPattern.charAt(i);
+			} else {
+				break;
 			}
-			return "";
 		}
 
-		function parseApi(dateString, pattern) {
-			if (dateString && pattern && (dateString.length === pattern.length)) {
-				return newFormatter(pattern).parse(dateString);
+		return createPatternEntry(text, startIndex);
+	}
+
+	function newTextEntry(fullPattern, startIndex) {
+		var text = "";
+		for (var i = startIndex; i < fullPattern.length; i++) {
+			if (!isPatternChar(fullPattern.charAt(i))) {
+				text += fullPattern.charAt(i);
+			} else {
+				break;
 			}
-			return null;
 		}
-
-		// public APIs
 		return {
-			formatter: newFormatter,
-			format : formatApi,
-			parse : parseApi
+			text: text,
+			startIndex: startIndex,
+			format: function(/* arguments will be ignored */) {
+				return text;
+			},
+			populate: function() {
+				// plain text in the pattern, ignored during parse
+			}
 		};
+	}
 
-	}());
+	function compile(pattern) {
+		var i = 0, ch = '\0',
+			entry,
+			entryList = [];
+
+		for (i = 0; i < pattern.length; i+= entry.text.length) {
+			ch = pattern.charAt(i);
+			if (isPatternChar(ch)) {
+				entry = newPatternEntry(pattern, i);
+			} else {
+				entry = newTextEntry(pattern, i);
+			}
+			entryList.push(entry);
+		}
+
+		return {
+			raw: pattern,
+			entryList: entryList
+		};
+	}
+
+	function newFormatter(compiledPattern) {
+
+		function format(date) {
+			var result = "";
+			for (var i = 0; i < compiledPattern.entryList.length; i++) {
+				result += compiledPattern.entryList[i].format(date);
+			}
+			return result;
+		}
+
+		function parse(dateString) {
+			return "new date parsed from the input date string";
+		}
+
+		return {
+			format: format,
+			parse: parse
+		}
+	}
+
+	dateTime.formatter = function(pattern) {
+		if (!pattern && !trim(pattern)) {
+			throw new Error("Invalid pattern - '" + pattern + "'");
+		}
+		return newFormatter(compile(pattern));
+	};
+
+	context.DateTime = dateTime;
 
 }(this));
