@@ -17,6 +17,9 @@
 	};
 
 	dateTime.format = function(date, pattern) {
+		if (Object.prototype.toString.call(date) !== "[object Date]") {
+			throw new TypeError("Invalid date[" + date + "]");
+		}
 		return new Formatter(pattern).format(date);
 	};
 
@@ -71,11 +74,75 @@
 		targetDate.setFullYear(dateString.substr(this.startIndex, this.patternText.length));
 	};
 
+	function MonthPatternEntry(patternText, startIndex) {
+		Entry.call(this, patternText, startIndex);
+	}
+	MonthPatternEntry.prototype = createObject(Entry.prototype);
+	MonthPatternEntry.prototype.format = function(date) {
+		var month = (date.getMonth() + 1).toString();
+		if (month.length < this.patternText.length) {
+			return "0" + month;
+		}
+		return month;
+	};
+	MonthPatternEntry.prototype.popupate = function(dateString, targetDate) {
+		targetDate.setMonth(dateString.substr(this.startIndex, this.patternText.length));
+	};
+
+	function DayOfMonthPatternEntry(patternText, startIndex) {
+		Entry.call(this, patternText, startIndex);
+	}
+	DayOfMonthPatternEntry.prototype = createObject(Entry.prototype);
+	DayOfMonthPatternEntry.prototype.format = function(date) {
+		var dayOfMonth = date.getDate().toString();
+		if (dayOfMonth.length < this.patternText.length) {
+			return "0" + dayOfMonth;
+		}
+		return dayOfMonth;
+	};
+	DayOfMonthPatternEntry.prototype.popupate = function(dateString, targetDate) {
+		targetDate.setDate(dateString.substr(this.startIndex, this.patternText.length));
+	};
+
+	function DayOfWeekPatternEntry(patternText, startIndex) {
+		Entry.call(this, patternText, startIndex);
+	}
+	DayOfWeekPatternEntry.prototype = createObject(Entry.prototype);
+	DayOfWeekPatternEntry.prototype.format = function(date) {
+		var dayOfWeek;
+		switch(date.getDay()) {
+			case SUNDAY  :dayOfWeek = "SUNDAY";  break;
+			case MONDAY  :dayOfWeek = "MONDAY";  break;
+			case TUESDAY :dayOfWeek = "TUESDAY"; break;
+			case WEDNSDAY:dayOfWeek = "WEDNSDAY";break;
+			case THURSDAY:dayOfWeek = "THURSDAY";break;
+			case FRIDAY  :dayOfWeek = "FRIDAY";  break;
+			case SATURDAY:dayOfWeek = "SATURDAY";break;
+			default: throw Error("Oops! native javascript engine error!");
+		}
+		return dayOfWeek;
+	};
+	DayOfWeekPatternEntry.prototype.popupate = function(dateString, targetDate) {
+		targetDate.setDay(dateString.substr(this.startIndex, this.patternText.length));
+	};
+
+	var STOP = "~~stop";
+	var STEPS = "~~steps";
+	var patterns = {
+		"yyyy": YearPatternEntry,
+		"M"   : MonthPatternEntry,
+		"MM"  : MonthPatternEntry,
+		"d"   : DayOfMonthPatternEntry,
+		"dd"  : DayOfMonthPatternEntry,
+		"D"   : DayOfWeekPatternEntry,
+		"DD"  : DayOfWeekPatternEntry
+	};
+
 	function compile(pattern) {
 		return reduce(pattern, [], function reducer(result, ch, i) {
 			var entry = readNextEntry(pattern, i);
 			result.push(entry);
-			reducer["~steps"] = entry.patternText.length;
+			reducer[STEPS] = entry.patternText.length;
 			return result;
 		});
 	}
@@ -102,20 +169,21 @@
 				previousChar = currentChar;
 				return result + currentChar;
 			}
-			reducer["~stop"] = true;
+			reducer[STOP] = true;
 			return result;
 		});
 	}
 
 	function createEntry(patternText, startIndex) {
-		if ("yyyy" === patternText) {
-			return new YearPatternEntry(patternText, startIndex);
+		var patternClass = patterns[patternText];
+		if (patternClass) {
+			return new patternClass(patternText, startIndex);
 		}
 		return new TextEntry(patternText, startIndex);
 	}
 
 	function isPatternChar(ch) {
-		return "y".indexOf(ch) > -1;
+		return "yMdD".indexOf(ch) > -1;
 	}
 
 	function trim(string) {
@@ -131,9 +199,9 @@
 	function reduce(list, initValue, reducer) {
 		var i = 0,
 			result = initValue;
-		for (; !reducer["~stop"] && (i < list.length); ) {
+		for (; !reducer[STOP] && (i < list.length); ) {
 			result = reducer(result, list[i], i);
-			i += reducer["~steps"] || 1;
+			i += reducer[STEPS] || 1;
 		}
 		return result;
 	}
