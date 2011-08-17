@@ -1,0 +1,12 @@
+<project name="DateTimeJS">
+
+	<target name="test">
+		<java classname="org.mozilla.javascript.tools.shell.Main">
+			<classpath>
+				<path location="${basedir}\lib\js.jar"/>
+			</classpath>
+			<arg line="test\dateTimeTest.js"/>
+		</java>
+	</target>
+
+</project>
