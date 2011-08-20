@@ -43,7 +43,38 @@
 		});
 	};
 	Formatter.prototype.parse = function(dateString) {
-		throw new Error("new date parsed from the input date string");
+		function extractTextForParsing(currentEntry, nextEntry, startIndex) {
+			if (!nextEntry) {
+				// return the rest of the string if this is the last entry
+				return dateString.substring(startIndex);
+			}
+			if (nextEntry instanceof TextEntry) {
+				// if the next entry is plain text entry then all the text before
+				// that is used for parsing, even it is longer than the pattern text
+				return dateString.substring(startIndex, dateString.indexOf(nextEntry.patternText, startIndex));
+			}
+			// extract the same length of chars as the pattern for parsing
+			return dateString.substr(startIndex, currentEntry.patternText.length);
+		}
+
+		var parseResult = reduce(this.compiledPattern, {
+			textEntryOnly: true,
+			startIndex: 0,
+			targetDate: new Date(1970, 0, 1, 0, 0, 0, 0) // default to "1970-Jan-1 00:00:00.000"
+		}, function reducer(result, entry, i) {
+			if (entry instanceof TextEntry) {
+				// skip plain text entry
+				result.startIndex += entry.patternText.length;
+			} else {
+				var textForParsing = extractTextForParsing(entry, this.compiledPattern[i + 1], result.startIndex);
+				entry.popupate(textForParsing, result.targetDate);
+				result.startIndex += textForParsing.length;
+				result.textEntryOnly = false;
+			}
+			return result;
+		}, this);
+
+		return parseResult.textEntryOnly ? null : parseResult.targetDate;
 	};
 
 	// Classes for each type of entry in the pattern string
@@ -70,8 +101,9 @@
 	YearPatternEntry.prototype.format = function(date) {
 		return date.getFullYear().toString();
 	};
-	YearPatternEntry.prototype.popupate = function(dateString, targetDate) {
-		targetDate.setFullYear(dateString.substr(this.startIndex, this.patternText.length));
+	YearPatternEntry.prototype.popupate = function(yearString, targetDate) {
+		var year = parseInteger(yearString, "year");
+		targetDate.setFullYear(year);
 	};
 
 	function MonthPatternEntry(patternText, startIndex) {
@@ -80,28 +112,24 @@
 	MonthPatternEntry.prototype = createObject(Entry.prototype);
 	MonthPatternEntry.prototype.format = function(date) {
 		var month = (date.getMonth() + 1).toString();
-		if (month.length < this.patternText.length) {
-			return "0" + month;
-		}
-		return month;
+		return leftPad(month, this.patternText.length);
 	};
-	MonthPatternEntry.prototype.popupate = function(dateString, targetDate) {
-		targetDate.setMonth(dateString.substr(this.startIndex, this.patternText.length));
+	MonthPatternEntry.prototype.popupate = function(monthString, targetDate) {
+		var month = parseInteger(monthString, "month") - 1;
+		targetDate.setMonth(month);
 	};
 
-	function DayOfMonthPatternEntry(patternText, startIndex) {
+	function DateOfMonthPatternEntry(patternText, startIndex) {
 		Entry.call(this, patternText, startIndex);
 	}
-	DayOfMonthPatternEntry.prototype = createObject(Entry.prototype);
-	DayOfMonthPatternEntry.prototype.format = function(date) {
-		var dayOfMonth = date.getDate().toString();
-		if (dayOfMonth.length < this.patternText.length) {
-			return "0" + dayOfMonth;
-		}
-		return dayOfMonth;
+	DateOfMonthPatternEntry.prototype = createObject(Entry.prototype);
+	DateOfMonthPatternEntry.prototype.format = function(date) {
+		var dateOfMonth = date.getDate().toString();
+		return leftPad(dateOfMonth, this.patternText.length);
 	};
-	DayOfMonthPatternEntry.prototype.popupate = function(dateString, targetDate) {
-		targetDate.setDate(dateString.substr(this.startIndex, this.patternText.length));
+	DateOfMonthPatternEntry.prototype.popupate = function(dateString, targetDate) {
+		var dateOfMonth = parseInteger(dateString, "DateOfMonth");
+		targetDate.setDate(dateOfMonth);
 	};
 
 	function DayOfWeekPatternEntry(patternText, startIndex) {
@@ -111,19 +139,19 @@
 	DayOfWeekPatternEntry.prototype.format = function(date) {
 		var dayOfWeek;
 		switch(date.getDay()) {
-			case SUNDAY  :dayOfWeek = "SUNDAY";  break;
-			case MONDAY  :dayOfWeek = "MONDAY";  break;
-			case TUESDAY :dayOfWeek = "TUESDAY"; break;
-			case WEDNSDAY:dayOfWeek = "WEDNSDAY";break;
-			case THURSDAY:dayOfWeek = "THURSDAY";break;
-			case FRIDAY  :dayOfWeek = "FRIDAY";  break;
-			case SATURDAY:dayOfWeek = "SATURDAY";break;
+			case SUNDAY  :dayOfWeek = "Sunday";  break;
+			case MONDAY  :dayOfWeek = "Monday";  break;
+			case TUESDAY :dayOfWeek = "Tuesday"; break;
+			case WEDNSDAY:dayOfWeek = "Wednsday";break;
+			case THURSDAY:dayOfWeek = "Thursday";break;
+			case FRIDAY  :dayOfWeek = "Friday";  break;
+			case SATURDAY:dayOfWeek = "Saturday";break;
 			default: throw Error("Oops! native javascript engine error!");
 		}
 		return dayOfWeek;
 	};
 	DayOfWeekPatternEntry.prototype.popupate = function(dateString, targetDate) {
-		targetDate.setDay(dateString.substr(this.startIndex, this.patternText.length));
+		throw new Error("DateOfWeek pattern doesn't support parse.");
 	};
 
 	var STOP = "~~stop";
@@ -132,10 +160,9 @@
 		"yyyy": YearPatternEntry,
 		"M"   : MonthPatternEntry,
 		"MM"  : MonthPatternEntry,
-		"d"   : DayOfMonthPatternEntry,
-		"dd"  : DayOfMonthPatternEntry,
+		"d"   : DateOfMonthPatternEntry,
+		"dd"  : DateOfMonthPatternEntry,
 		"D"   : DayOfWeekPatternEntry,
-		"DD"  : DayOfWeekPatternEntry
 	};
 
 	function compile(pattern) {
@@ -196,14 +223,31 @@
 		return new F();
 	}
 
-	function reduce(list, initValue, reducer) {
+	function reduce(list, initValue, reducer, thisObj) {
 		var i = 0,
 			result = initValue;
 		for (; !reducer[STOP] && (i < list.length); ) {
-			result = reducer(result, list[i], i);
+			result = reducer.call(thisObj, result, list[i], i);
 			i += reducer[STEPS] || 1;
 		}
 		return result;
 	}
 
+	function parseInteger(intString, datePart) {
+		var int = parseInt(intString, 10);
+		if (isNaN(int)) {
+			throw new Error("Invalide " + datePart + "[" + intString + "].");
+		}
+		return int;
+	}
+
+	function leftPad(s, len) {
+		var temp = s;
+		if (temp.length < len) {
+			for (var i = temp.length; i < len; i++) {
+				temp = "0" + temp;
+			}
+		}
+		return temp;
+	}
 }(this));
