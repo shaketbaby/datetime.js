@@ -1,7 +1,6 @@
 (function(context) {
 
 	var dateTime = context.DateTime = function(date){
-		this.__wrappedDate = date;
 	};
 
 	dateTime.formatter = function(pattern) {
