@@ -56,7 +56,7 @@ test("Formatter should be able to format 'D' to week day", function() {
 	expect(formatter.format(date)).equalsTo("Tuesday");
 
 	date.setDate(24);
-	expect(formatter.format(date)).equalsTo("Wednsday");
+	expect(formatter.format(date)).equalsTo("Wednesday");
 
 	date.setDate(25);
 	expect(formatter.format(date)).equalsTo("Thursday");
@@ -75,7 +75,7 @@ test("Formatter should be able to format 'yyyy-MM-dd D'", function() {
 
 	date.setMonth(10);
 	date.setDate(2);
-	expect(formatter.format(date)).equalsTo("2011-11-02 Wednsday");
+	expect(formatter.format(date)).equalsTo("2011-11-02 Wednesday");
 });
 
 test("Formatter should be able to parse 'yyyy-MM-dd'", function() {
