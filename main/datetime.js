@@ -1,7 +1,6 @@
 (function(context) {
 
-	var dateTime = context.DateTime = function(date){
-	};
+	var dateTime = context.DateTime = function(){};
 
 	dateTime.formatter = function(pattern) {
 		return formatter(pattern);
@@ -15,49 +14,65 @@
 		return formatter(pattern).parse(dateString);
 	};
 
-	var month = reduce(["January", "February", "March", "April", "May", "June",
+	var MONTH = reduce(["January", "February", "March", "April", "May", "June",
 			"July", "August", "September", "October", "November", "December"], {}, expander);
 
-	var weekday = reduce(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], {}, expander);
+	var WEEKDAY = reduce(["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"], {}, expander);
 
 	// private implementation details
+
+	function expander(result, longName, i) {
+	   var shortName = longName.substr(0, 3);
+	   result[i] = result[shortName] = result[longName] = {
+		   num: (dateTime[longName.toUpperCase()] = i),
+		   shortName: shortName,
+		   longName: longName
+	   };
+	   return result;
+	}
 
 	function formatter(pattern) {
 		if (!pattern || !trim(pattern)) {
 			throw new Error("Invalid pattern - '" + pattern + "'");
 		}
+		return newFormatter(compile(pattern));
+	}
 
-		var compiledPattern = compile(pattern);
+	function newFormatter(compiledPattern) {
+		function format(date) {
+			if (Object.prototype.toString.call(date) !== "[object Date]") {
+				throw new TypeError("Invalid date[" + date + "]");
+			}
+			return reduce(compiledPattern.entries, "", function(result, entry) {
+				return result + entry.format(date);
+			});
+		}
 
-		return {
-			pattern: pattern,
-			format: function(date) {
-				if (Object.prototype.toString.call(date) !== "[object Date]") {
-					throw new TypeError("Invalid date[" + date + "]");
+		function parse(dateString) {
+			function extractText(currentEntry, nextEntry, startIndex) {
+				if (!nextEntry) {
+					// return the rest of the string if this is the last entry
+					return dateString.substring(startIndex);
 				}
-				return reduce(compiledPattern.entries, "", function(result, entry) {
-					return result + entry.format(date);
-				});
-			},
-			parse: function(dateString) {
-				function extractText(currentEntry, nextEntry, startIndex) {
-					if (!nextEntry) {
-						// return the rest of the string if this is the last entry
-						return dateString.substring(startIndex);
-					}
-					if (nextEntry instanceof TextEntry) {
-						// if the next entry is plain text entry then all the text before
-						// that is used for parsing, even it is longer than the pattern text
-						return dateString.substring(startIndex, dateString.indexOf(nextEntry.patternText, startIndex));
-					}
-					// extract the same length of chars as the pattern for parsing
-					return dateString.substr(startIndex, currentEntry.patternText.length);
+				if (nextEntry instanceof TextEntry) {
+					// if the next entry is plain text entry then all the text before
+					// that is used for parsing, even it is longer than the pattern text
+					return dateString.substring(startIndex, dateString.indexOf(nextEntry.patternText, startIndex));
 				}
+				// extract the same length of chars as the pattern for parsing
+				return dateString.substr(startIndex, currentEntry.patternText.length);
+			}
 
-				return compiledPattern.textOnly ? null : reduce(compiledPattern.entries, {
+			if (compiledPattern.textOnly) {
+				return null;
+			}
+
+			return reduce(compiledPattern.entries,
+				{
 					startIndex: 0,
 					targetDate: new Date(1970, 0, 1, 0, 0, 0, 0) // default to "1970-Jan-1 00:00:00.000"
-				}, function reducer(result, entry, i) {
+				},
+				function reducer(result, entry, i) {
 					if (entry instanceof TextEntry) {
 						// skip plain text entry
 						result.startIndex += entry.patternText.length;
@@ -67,8 +82,14 @@
 						result.startIndex += textForParsing.length;
 					}
 					return result;
-				}).targetDate;
-			}
+				}
+			).targetDate;
+		}
+
+		return {
+			pattern: compiledPattern.rawPattern,
+			format: format,
+			parse: parse
 		};
 	}
 
@@ -94,7 +115,7 @@
 	}
 	YearPatternEntry.prototype = createObject(Entry.prototype);
 	YearPatternEntry.prototype.format = function(date) {
-		return date.getFullYear().toString();
+		return String(date.getFullYear());
 	};
 	YearPatternEntry.prototype.popupate = function(yearString, targetDate) {
 		var year = parseInteger(yearString, "year");
@@ -106,12 +127,22 @@
 	}
 	MonthPatternEntry.prototype = createObject(Entry.prototype);
 	MonthPatternEntry.prototype.format = function(date) {
-		var month = (date.getMonth() + 1).toString();
-		return leftPad(month, this.patternText.length);
+		var month = date.getMonth();
+		var patternLength = this.patternText.length;
+		if (patternLength < 3) {
+			return leftPad(String(month + 1), patternLength);
+		}
+		if (patternLength === 3) {
+			return MONTH[month].shortName;
+		}
+		return MONTH[month].longName;
 	};
 	MonthPatternEntry.prototype.popupate = function(monthString, targetDate) {
-		var month = parseInteger(monthString, "month") - 1;
-		targetDate.setMonth(month);
+		if (monthString.length < 3) {// 1 or 2 digits
+			targetDate.setMonth(parseInteger(monthString, "month") - 1);
+		} else {// short or long name
+			targetDate.setMonth(numValueByName(MONTH, monthString, "month"));
+		}
 	};
 
 	function DateOfMonthPatternEntry(patternText, startIndex) {
@@ -119,7 +150,7 @@
 	}
 	DateOfMonthPatternEntry.prototype = createObject(Entry.prototype);
 	DateOfMonthPatternEntry.prototype.format = function(date) {
-		var dateOfMonth = date.getDate().toString();
+		var dateOfMonth = String(date.getDate());
 		return leftPad(dateOfMonth, this.patternText.length);
 	};
 	DateOfMonthPatternEntry.prototype.popupate = function(dateString, targetDate) {
@@ -132,7 +163,7 @@
 	}
 	DayOfWeekPatternEntry.prototype = createObject(Entry.prototype);
 	DayOfWeekPatternEntry.prototype.format = function(date) {
-		return weekday[date.getDay()].longName;
+		return WEEKDAY[date.getDay()].longName;
 	};
 	DayOfWeekPatternEntry.prototype.popupate = function(dateString, targetDate) {
 		throw new Error("DateOfWeek pattern doesn't support parse.");
@@ -149,15 +180,18 @@
 
 	function compile(pattern) {
 		return reduce(pattern, {
-			textOnly: true,
-			entries: []
-		}, function reducer(result, ch, i) {
-			var entry = readNextEntry(pattern, i);
-			result.entries.push(entry);
-			result.textOnly = result.textOnly && (entry instanceof TextEntry)
-			reducer[STEPS] = entry.patternText.length;
-			return result;
-		});
+				rawPattern: pattern,
+				textOnly: true,
+				entries: []
+			},
+			function reducer(result, ch, i) {
+				var entry = readNextEntry(pattern, i);
+				result.entries.push(entry);
+				result.textOnly = result.textOnly && (entry instanceof TextEntry)
+				reducer[STEPS] = entry.patternText.length;
+				return result;
+			}
+		);
 	}
 
 	function readNextEntry(pattern, index) {
@@ -216,14 +250,12 @@
 		return result;
 	}
 
-	function expander(result, longName, i) {
-	   var shortName = longName.substr(0, 3);
-	   result[i] = result[shortName] = {
-		   num: (dateTime[longName.toUpperCase()] = i),
-		   shortName: shortName,
-		   longName: longName
-	   };
-	   return result;
+	function numValueByName(container, shortOrLongName, datePart) {
+		var entry = container[shortOrLongName];
+		if (entry) {
+			return entry.num;
+		}
+		throw new Error("Invalide " + datePart + "[" + shortOrLongName + "].");
 	}
 
 	function parseInteger(intString, datePart) {
